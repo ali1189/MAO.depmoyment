@@ -1,0 +1,199 @@
+---
+- hosts: master
+  tasks:
+
+# Create non-priviledge user 
+  - name: Create unprivileged test user
+    user:
+      name: ali
+      uid: 12345
+
+  - name: Create directories
+    file:
+      path: "{{ item }}"
+      state: directory
+      owner: ali
+    with_items:
+      - /var/nfsshare
+
+
+# sharing drive: Install ""NFS""
+
+  - name: Install NFS mount utility
+    become: true
+    yum:
+      name: nfs-utils
+      state: present
+
+
+# start nfs services 
+
+  - name: Start NFS services 
+    service: 
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+      - rpcbind
+      - nfs-server
+      - nfs-lock
+      - nfs-idmap
+
+  - name: Add export file
+    template:
+      src: ../templates/export-file-nfs.yml
+      dest: /etc/exports
+
+  - name: Start nfs-server
+    service: 
+      name: nfs-server
+      state: restarted
+      enabled: yes
+
+# enable NFS on fixed ports
+
+  - name: Add a lines to /etc/sysconfig/nfs
+    blockinfile:
+      path: /etc/sysconfig/nfs
+      block: |
+         LOCKD_TCPPORT=32803
+         LOCKD_UDPPORT=32769
+         MOUNTD_PORT=892
+         STATD_PORT=662
+      create: yes
+
+# Install FileBeat & send logs to logstash
+
+  - name: Add FileBeat repo
+    template:
+      src: ../templates/elk-repo.yml
+      dest: /etc/yum.repos.d/elk.repo
+
+  - name: install FileBeat
+    yum:
+      name: filebeat
+      state: present
+
+
+  - name: Add filebeat config
+    template:
+      src: ../templates/filebeat-config.yml
+      dest: /etc/filebeat/filebeat.yml
+
+  - name: Start filebeat
+    service:
+      name: filebeat
+      state: started
+      enabled: yes
+
+
+#install Mesos-Master & Marathon & Zookeeper
+
+  - shell: rpm -Uvh http://repos.mesosphere.com/el/7/noarch/RPMS/mesosphere-el-repo-7-1.noarch.rpm
+    ignore_errors: true
+
+  - shell: rpm -Uvh http://archive.cloudera.com/cdh4/one-click-install/redhat/6/x86_64/cloudera-cdh-4-0.x86_64.rpm
+    ignore_errors: true
+  
+
+
+  - name: install mesos marathon zookeeper zookeeper-server
+    yum: 
+      name:
+        - mesos
+        - marathon
+        - zookeeper
+        - zookeeper-server
+      state: latest
+
+
+
+
+  - shell: zookeeper-server-initialize --myid=1 --force
+    become_user: zookeeper
+
+  - name: add master ip
+    lineinfile:
+      path: /etc/mesos-master/ip
+      line: '192.168.10.10'
+      create: yes
+
+
+  - name: replace localhost to ip
+    replace:
+      path: /etc/mesos/zk
+      regexp: 'localhost'
+      replace: "192.168.10.10"
+      
+  - name: Add a line to a file if the file does not exist, without passing regexp
+    blockinfile:
+      path: /etc/default/marathon
+      block: |
+          MARATHON_MASTER="zk://192.168.10.10:2181/mes"
+          MARATHON_ZK="zk://192.168.10.10:2181/maratho"
+          MARATHON_MESOS_USER="root"
+      create: yes
+
+
+
+# enable + start zookeeper-server mesos-master marathon
+
+  - name: Start NFS services 
+    service: 
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+      - zookeeper-server
+      - mesos-master
+      - marathon
+
+
+  - name: Stop mesos-slave
+    service: 
+      name: mesos-slave
+      state: stopped
+      enabled: yes
+
+# edit /etc/hosts file
+
+  - name: Add a line to a file /etc/hosts
+    blockinfile:
+      path: /etc/hosts
+      block: |
+          192.168.10.10 Mesos-Project-Master Mesos-Master
+          192.168.10.11 Mesoso-Project-Agent Mesos-Agent
+          192.168.10.12 Mesos-Project-Management Mesos-Management 
+      create: yes
+# firewalld add http & nfs services
+
+  - firewalld:
+       service: "{{ item }}"
+       permanent: yes
+       state: enabled
+    with_items:
+          - http
+          - https
+          - nfs
+          - mountd
+          - rpc-bind
+
+
+# allow Mesos UI & Marathon & Mesos-Agent to connect to Master
+
+  - firewalld:
+       port: "{{ item }}"
+       permanent: yes
+       state: enabled
+    with_items:
+          - 5050/tcp
+          - 8080/tcp
+          - 2181/tcp
+
+  - name: restart firewalld services
+    service:
+       name: firewalld
+       state: restarted
+       enabled: yes
+
+

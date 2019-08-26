@@ -1,0 +1,102 @@
+---
+- hosts: agent
+  tasks:
+# install & configure NFS client
+
+  - name: Install NFS mount utility
+    become: true
+    yum:
+      name: nfs-utils
+      state: present
+
+# Create non-priviledge user 
+
+  - name: Create unprivileged test user
+    user:
+      name: ali
+      uid: 12345
+
+  - name: Create mount points directories
+    file:
+      path: "{{ item }}"
+      state: directory
+      owner: ali
+    with_items:
+      - /mnt/nfs/var/nfsshare
+
+# test mount nfs you will see file with "this is ali using nfs"
+  - name: Mount up from master
+    shell: mount -t nfs 192.168.10.10:/var/nfsshare /mnt/nfs/var/nfsshare/
+    args:
+       warn: false
+
+
+# install mesos-agent & zookeper & marathon
+
+  - shell: rpm -Uvh http://repos.mesosphere.com/el/7/noarch/RPMS/mesosphere-el-repo-7-1.noarch.rpm
+    ignore_errors: true
+
+  - shell: rpm -Uvh http://archive.cloudera.com/cdh4/one-click-install/redhat/6/x86_64/cloudera-cdh-4-0.x86_64.rpm
+    ignore_errors: true
+  
+
+
+  - name: install mesos marathon zookeeper zookeeper-server
+    yum: 
+      name:
+        - mesos
+        - marathon
+        - zookeeper
+        - zookeeper-server
+      state: latest
+
+
+
+
+  - shell: zookeeper-server-initialize --myid=1 --force
+    become_user: zookeeper
+
+
+  - name: replace localhost to ip
+    replace:
+      path: /etc/mesos/zk
+      regexp: 'localhost'
+      replace: "192.168.10.10"
+      
+  - name: Add a line to a file if the file does not exist, without passing regexp
+    blockinfile:
+      path: /etc/default/marathon
+      block: |
+          MARATHON_MASTER="zk://192.168.10.10:2181/mes"
+          MARATHON_ZK="zk://192.168.10.10:2181/maratho"
+          MARATHON_MESOS_USER="root"
+      create: yes
+
+
+# stop mesos-master & start mesos-agent and marathon 
+
+  - name: Stop mesos-master
+    service: 
+      name: mesos-master
+      state: stopped
+      enabled: yes
+
+  - name: Start mesos-agent & marathon
+    service: 
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+      - mesos-slave
+      - marathon
+
+
+# edit /etc/hosts file
+  - name: Add a line to /etc/hosts
+    blockinfile:
+      path: /etc/hosts
+      block: |
+          192.168.10.10 Mesos-Project-Master Mesos-Master
+          192.168.10.11 Mesos-Project-Agent  Mesos-Agent
+          192.168.10.12 Mesos-Project-Management Mesos-Management
+      create: yes

@@ -1,0 +1,6 @@
+[master]
+Mesos-Project-Master ansible_connection=local
+
+Mesos-Project-Master ansible_ssh_host=192.168.10.10 ansible_ssh_private_key_file=C:/Users/hp/Desktop/vagrant-centos/.vagrant/machines/Mesos-Project-Master/virtualbox/private_key
+
+

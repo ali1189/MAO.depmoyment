@@ -1,0 +1,5 @@
+[agent]
+Mesos-Project-Agent ansible_connection=local
+
+Mesos-Project-Agent ansible_ssh_host=192.168.10.11 ansible_ssh_private_key_file=C:/Users/hp/Desktop/vagrant-centos/.vagrant/machines/Mesos-Project-Agent/virtualbox/private_key
+

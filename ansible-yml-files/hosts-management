@@ -1,0 +1,4 @@
+[management]
+Mesos-Management ansible_connection=local
+
+Mesos-Management ansible_ssh_host=192.168.10.12 ansible_ssh_private_key_file=C:/Users/hp/Desktop/vagrant-centos/.vagrant/machines/Mesos-Project-Management/virtualbox/private_key

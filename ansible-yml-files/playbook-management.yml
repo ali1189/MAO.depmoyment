@@ -1,0 +1,156 @@
+---
+- hosts: management
+  tasks:
+# install Java 8
+  - name: install jdk rpm
+    yum:
+      name: java-1.8.0-openjdk
+      state: present
+
+
+# install & configure NFS client
+
+
+  - name: Install NFS mount utility
+    become: true
+    yum:
+      name: nfs-utils
+      state: present
+
+
+# Create non-priviledge user 
+
+  - name: Create unprivileged test user
+    user:
+      name: ali
+      uid: 12345
+
+# Create mount points directories
+
+  - name: Create mount points directories
+    file:
+      path: "{{ item }}"
+      state: directory
+      owner: ali
+    with_items:
+      - /mnt/nfs/var/nfsshare
+
+# test mount nfs you will see file with "this is ali using nfs"
+  - name: Mount up from master
+    shell: mount -t nfs 192.168.10.10:/var/nfsshare /mnt/nfs/var/nfsshare/
+    args:
+      warn: false
+
+
+# install elk & kibana 
+
+
+  - name: import PGP KEY
+    shell: rpm --import https://artifacts.elastic.co/GPG-KEY-elasticsearch
+
+  - name: Add ELK Repo
+    template:
+      src: ../templates/elk-repo.yml
+      dest: /etc/yum.repos.d/elk.repo
+
+  - name: Add Kibana Repo
+    template:
+      src: ../templates/kibana-repo.yml
+      dest: /etc/yum.repos.d/kibana.repo
+
+
+  - name: install elk kibana epel-release nginx
+    yum: 
+      name: 
+         - elasticsearch
+         - kibana
+         - epel-release
+         - nginx
+      state: present
+
+
+# nginx configuration
+
+  - name: edit nginx.conf 
+    template:
+      src: ../templates/nginx-config.yml
+      dest: /etc/nginx/nginx.conf
+
+  - name: add kibana conf to nginx
+    template:
+      src: ../templates/nginx-kibana-config.yml
+      dest: /etc/nginx/conf.d/kibana.conf
+
+
+# install logstash
+  - name: Add logstash Repo
+    template:
+      src: ../templates/logstash-repo.yml
+      dest: /etc/yum.repos.d/logstash.repo
+
+  - name: install logstash
+    yum:
+      name: logstash
+      state: present
+
+  - name: addlogstash-simple conf 
+    template:
+      src: ../templates/01-logstash-simple.yml
+      dest: /etc/logstash/conf.d/01-logstash-simple.conf
+
+
+
+# enable + start ELK Kibana nginx logstash
+
+  - name: Start NFS services 
+    service: 
+      name: "{{ item }}"
+      state: started
+      enabled: yes
+    with_items:
+      - elasticsearch
+      - kibana
+      - nginx
+      - logstash
+
+# edit /etc/hosts file
+
+  - name: Add a line to a file to /etc/hosts
+    blockinfile:
+      path: /etc/hosts
+      block: |
+          192.168.10.10 Mesos-Project-Master Mesos-Master  
+          192.168.10.11 Mesos-Project-Agent  Mesos-Agent
+          192.168.10.12 Mesos-Project-Management Mesos-Management 
+      create: yes
+
+
+# firewalld open ports
+
+
+  - firewalld:
+       service: "{{ item }}"
+       permanent: yes
+       state: enabled
+    with_items:
+          - http
+          - https
+
+
+  - firewalld:
+       port: "{{ item }}"
+       permanent: yes
+       state: enabled
+    with_items:
+          - 5044/tcp
+
+  - name: restart firewalld services
+    service:
+       name: firewalld
+       state: restarted
+       enabled: yes
+
+
+
+
+
